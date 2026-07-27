@@ -15,7 +15,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "graphiti-core[falkordb]>=0.29.2",
+    "graphiti-core[falkordb]>=0.29.3",
 ]
 
 [project.optional-dependencies]
