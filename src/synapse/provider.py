@@ -87,6 +87,7 @@ class SynapseMemoryProvider:
         from graphiti_core.driver.falkordb_driver import FalkorDriver
         from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
         from graphiti_core.llm_client.config import LLMConfig
+        from graphiti_core.llm_client.openai_client import OpenAIClient
         from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
         self._driver = FalkorDriver(
@@ -101,19 +102,41 @@ class SynapseMemoryProvider:
             base_url=self._config.llm_base_url,
             small_model=self._config.llm_model,
         )
+        # ponytail: json_object works on all OpenAI-compatible endpoints
+        # (DeepSeek, OpenRouter, vLLM, etc.); json_schema only works on
+        # api.openai.com + constrained-decoding servers.
+        #
+        # The gpt-5 reasoning family on api.openai.com rejects `max_tokens`
+        # and `temperature`, which the generic client always sends. The native
+        # OpenAIClient routes those models through responses.parse() with
+        # `max_output_tokens` instead, so select it with SYNAPSE_LLM_CLIENT=openai.
+        if self._config.llm_client == "openai":
+            llm_client = OpenAIClient(
+                config=llm_config, reasoning=self._config.llm_reasoning
+            )
+        else:
+            llm_client = OpenAIGenericClient(
+                config=llm_config, structured_output_mode='json_object'
+            )
+
+        # The reranker calls chat.completions with max_tokens=1/temperature=0,
+        # which reasoning models reject — give it its own non-reasoning model.
+        reranker_config = LLMConfig(
+            api_key=self._config.llm_api_key,
+            model=self._config.reranker_model,
+            base_url=self._config.llm_base_url,
+            small_model=self._config.reranker_model,
+        )
+
         self._graphiti = Graphiti(
             graph_driver=self._driver,
-            # ponytail: json_object works on all OpenAI-compatible endpoints
-            # (DeepSeek, OpenRouter, vLLM, etc.); json_schema only works on
-            # api.openai.com + constrained-decoding servers.
-            # Add SYNAPSE_STRUCTURED_OUTPUT_MODE env var if user needs json_schema.
-            llm_client=OpenAIGenericClient(config=llm_config, structured_output_mode='json_object'),
+            llm_client=llm_client,
             embedder=OpenAIEmbedder(config=OpenAIEmbedderConfig(
                 api_key=self._config.llm_api_key,
                 base_url=self._config.llm_base_url,
                 embedding_model=self._config.embedding_model,
             )),
-            cross_encoder=OpenAIRerankerClient(config=llm_config),
+            cross_encoder=OpenAIRerankerClient(config=reranker_config),
         )
 
         # Background asyncio loop for async operations
