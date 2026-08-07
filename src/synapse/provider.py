@@ -342,20 +342,45 @@ class SynapseMemoryProvider:
                             list(entities), edges=neighborhood_edges or None
                         )
 
-                    # RIF ranking: penalized entities sink in results
+                    # RIF ranking: penalized entities sink in results.
+                    #
+                    # RIF adjusts relevance, it does not replace it. Ranking is
+                    # by (match_score - penalty), descending, with the original
+                    # position breaking ties.
+                    #
+                    # Two bugs this replaces:
+                    #
+                    # - The old key was `-(max(from_p, to_p))` fed to an
+                    #   ascending sort, so -0.3 sorted before 0.0 and penalized
+                    #   entities rose to the top — the exact inverse of RIF.
+                    #
+                    # - It sorted on penalty alone. Because the penalty is a
+                    #   flat 0.3 regardless of how well a fact matched, a single
+                    #   penalized entity dropped below every unpenalized result
+                    #   no matter how much better it answered the query. With a
+                    #   personal graph, where most entities are Jaccard-similar
+                    #   to something recalled, that demoted the best answer
+                    #   routinely.
+                    #
+                    # Facts appended by pattern completion carry no score and
+                    # default to 0, so direct matches outrank expansions.
                     if self._hippocampus and bm25_results:
-                        def rif_sort_key(r):
-                            from_p = self._hippocampus.get_rif_penalty(
-                                r.get("from_node", "")
+                        def rif_rank(r):
+                            penalty = max(
+                                self._hippocampus.get_rif_penalty(
+                                    r.get("from_node", "")
+                                ),
+                                self._hippocampus.get_rif_penalty(
+                                    r.get("to_node", "")
+                                ),
                             )
-                            to_p = self._hippocampus.get_rif_penalty(
-                                r.get("to_node", "")
-                            )
-                            # Penalty = max of from/to — both endpoints matter
-                            return -(max(from_p, to_p))  # negative = lower rank
+                            return float(r.get("score") or 0) - penalty
 
-                        bm25_results.sort(key=rif_sort_key)
-                        result_dict["results"] = bm25_results[:20]
+                        ranked = sorted(
+                            enumerate(bm25_results),
+                            key=lambda pair: (-rif_rank(pair[1]), pair[0]),
+                        )
+                        result_dict["results"] = [r for _, r in ranked][:20]
 
                     result = json.dumps(result_dict)
                 except Exception:
