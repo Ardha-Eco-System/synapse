@@ -121,3 +121,11 @@ def test_query_ranks_by_token_overlap():
     cypher, _ = engine._build_bm25_query("memory provider")
     assert "ORDER BY score DESC" in cypher
     assert "toLower(r.fact)" in cypher
+
+
+def test_query_returns_match_score():
+    """The token-overlap score is returned so callers can rank on it."""
+    engine = RetrievalEngine(host="localhost", port=6379, group_id="g")
+    cypher, _ = engine._build_bm25_query("memory provider")
+    assert "invalid_at, score " in cypher
+    assert "ORDER BY score DESC" in cypher

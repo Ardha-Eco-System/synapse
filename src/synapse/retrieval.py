@@ -118,7 +118,7 @@ class RetrievalEngine:
             f"size([t IN $tokens WHERE toLower(r.fact) CONTAINS t]) AS score "
             f"WHERE score > 0 "
             f"RETURN a.name AS from_node, r.fact AS fact, b.name AS to_node, "
-            f"r.valid_at AS valid_at, r.invalid_at AS invalid_at "
+            f"r.valid_at AS valid_at, r.invalid_at AS invalid_at, score "
             f"ORDER BY score DESC "
             f"LIMIT {_safe_limit(limit, default=5)}",
             {"group_id": self.group_id, "tokens": tokenize_query(query)},
